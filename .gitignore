@@ -1,0 +1,57 @@
+# =====================================
+# Julia general ignores
+# =====================================
+
+# Julia compiled code / temp files
+*.ji
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+
+# Coverage directories
+coverage/
+
+# Julia REPL history
+.julia_history
+
+# ===== Pkg Environment =====
+# Avoid committing packages downloaded in .julia/
+# (Your actual project environment is Project.toml / Manifest.toml)
+.julia/
+
+# ===== VSCode =====
+.vscode/
+
+# ===== System crap =====
+.DS_Store
+Thumbs.db
+
+# =====================================
+# Project-specific ignores
+# =====================================
+
+# Example scripts outputs
+results/
+
+# Test images or datasets
+test_images/
+
+# Any large image formats
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.tif
+*.tiff
+*.gif
+
+# Backup files
+*.bak
+*.tmp
+
+# =====================================
+# Optional
+# =====================================
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
