@@ -1,0 +1,4 @@
+name = "FSUtils"
+uuid = "495f9a5b-485f-4ee1-ac40-b33cc2173c40"
+authors = ["Mitsuki ISHIYAMA <162681396+STB4M1@users.noreply.github.com>"]
+version = "0.1.0"

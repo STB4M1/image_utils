@@ -1,0 +1,10 @@
+name = "ImageUtils"
+uuid = "af025eb3-bd5e-496a-9058-05a9a577c839"
+authors = ["Mitsuki ISHIYAMA <162681396+STB4M1@users.noreply.github.com>"]
+version = "0.1.0"
+
+[deps]
+Images = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
+
+[compat]
+Images = "0.26.2"
