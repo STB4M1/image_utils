@@ -1,0 +1,14 @@
+name = "GeometryUtils"
+uuid = "19e088cc-8ace-4de0-bf00-fb471aa0ee5e"
+authors = ["Mitsuki ISHIYAMA <162681396+STB4M1@users.noreply.github.com>"]
+version = "0.1.0"
+
+[deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+Images = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+
+[compat]
+CUDA = "5.9.4"
+Images = "0.26.2"
+StatsBase = "0.34.8"

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fs_utils"
+version = "0.1.0"
+description = "Simple filesystem utility functions"
+readme = "README.md"
+requires-python = ">=3.8"
+
+authors = [
+    { name="Mitsuki ISHIYAMA", email="162681396+STB4M1@users.noreply.github.com" }
+]
+
+[project.urls]
