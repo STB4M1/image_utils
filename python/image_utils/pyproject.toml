@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "image_utils"
+version = "0.1.0"
+description = "Image loading/saving utilities with Julia-compatible processing"
+readme = "README.md"
+requires-python = ">=3.8"
+
+authors = [
+    { name="Mitsuki ISHIYAMA", email="162681396+STB4M1@users.noreply.github.com" }
+]
+
+dependencies = [
+    "numpy",
+    "Pillow"
+]
+
+[project.urls]
