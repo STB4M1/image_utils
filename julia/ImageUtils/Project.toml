@@ -5,6 +5,8 @@ version = "0.1.0"
 
 [deps]
 Images = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 
 [compat]
 Images = "0.26.2"
+ProgressMeter = "1.11.0"

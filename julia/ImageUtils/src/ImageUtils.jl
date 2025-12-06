@@ -9,9 +9,10 @@ export read_img_gray_float64,
        separate_rgb,
        raw_separate_bayer,
        separate_bayer,
-       separate_bayer_downsample
+       separate_bayer_downsample,
+       make_background
 
-using Images
+using Images, ProgressMeter, Base.Threads
 
 function read_img_gray_float64(path::String)
     out = Float64.(Gray.(load(path)))
@@ -352,6 +353,85 @@ function separate_bayer_downsample(in_path::String,
     end
 
     println("✨ Downsampled Bayer saved → pattern=$(pattern), ch=$(channel), type=$(save_type), mode=$(save_mode)")
+end
+
+function make_background(pathlist::Vector{String}; mode=:mode)
+    println("make_background begins!")
+    height, width = size(read_img_gray_float64(pathlist[1]))
+    println("height x width = $height x $width")
+    if mode == :mean
+        background = zeros(Float64, height, width)
+        @showprogress desc="Background calculating..." for path in pathlist
+            img = read_img_gray_float64(path)
+            img_u8 = trunc.(UInt8, img .* 255)   # Cのunsigned charでのキャストと同等
+            background .+= Float64.(img_u8)      # 0〜255で加算
+
+            img_u8 = nothing
+            img    = nothing
+        end
+        background ./= length(pathlist)          # 平均 (0〜255)
+        background ./= 255.0                     # 0.0〜1.0に正規化
+        GC.gc() 
+        return background
+    end
+
+    if mode == :mode || mode == :median
+        votevol = zeros(Int, 256, height, width)
+        @showprogress desc="Background calculating..." for path in pathlist
+            img = read_img_gray_float64(path)
+            img_u8 = trunc.(UInt8, img .* 255)
+            @threads for i in 1:width
+                @inbounds for j in 1:height
+                    votevol[img_u8[j, i]+1, j, i] += 1
+                end
+            end
+        end
+        
+        if mode == :mode
+
+            argmax_result = argmax(votevol, dims=1) 
+            println("argmax_result size is $(size(argmax_result))")
+            indices = argmax_result[1, :, :]
+            println("indices size is $(size(indices))")
+            indices_array = [value[1] for value in indices]
+            println("indices_array size is $(size(indices_array))")
+            mode_values = indices_array .- 1
+            println("mode_values size is $(size(mode_values))")
+            background = mode_values ./ 255.0
+
+            return background
+        end
+        if mode == :median
+            # 中央値（偶数枚は中央2ビンの平均）
+            N = length(pathlist)
+            half_lo = (N + 1) ÷ 2  # 下側中央値の閾値（1-indexedの累積）
+            half_hi = (N + 2) ÷ 2  # 上側中央値の閾値（偶数のとき一つ上）
+
+            background = Array{Float64}(undef, height, width)
+            @threads for i in 1:width
+                @inbounds for j in 1:height
+                    csum = 0
+                    med_lo = 1
+                    med_hi = 1
+                    found_lo = false
+                    @inbounds for k in 1:256
+                        csum += votevol[k, j, i]
+                        if !found_lo && csum >= half_lo
+                            med_lo = k
+                            found_lo = true
+                        end
+                        if csum >= half_hi
+                            med_hi = k
+                            break
+                        end
+                    end
+                    med_val = ((med_lo - 1) + (med_hi - 1)) / 2.0  # 0–255の中央値
+                    background[j, i] = med_val / 255.0              # 0.0–1.0へ
+                end
+            end
+            return background
+        end
+    end
 end
 
 end # module

@@ -28,7 +28,7 @@ function padding(img::AbstractMatrix{<:Real}, pad_value::Real,
     return copy(padded)  # コピーを返す（必ず新規配列）
 end
 
-function extract_center(img::AbstractMatrix{<:Real}, w::Int, h::Int)
+function extract_center(img::AbstractMatrix, w::Int, h::Int)
     H, W = size(img)
     @assert h <= H && w <= W "指定サイズが元画像より大きいです"
 
