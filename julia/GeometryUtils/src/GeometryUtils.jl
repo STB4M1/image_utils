@@ -47,33 +47,40 @@ function load_coefficients(filepath::String)
     return coefs
 end
 
-function quadratic_distortion_correction(img::Array{<:AbstractFloat,2} , coefa::Vector{<:AbstractFloat})
-    @assert size(img)[1] == size(img)[2] "The image must be square. Got $(size(img))."
+function quadratic_distortion_correction(
+    img::AbstractMatrix{T},
+    coefa::AbstractVector{<:AbstractFloat}
+) where {T}
+    @assert size(img, 1) == size(img, 2) "The image must be square. Got $(size(img))."
     @assert length(coefa) == 12 "The coefficients must be 12. Got $(length(coefa))."
 
-    n = size(img)[1]
-    bkg = mean(img)
-    refX = Array{Int}(undef,n*n)
-    refY = Array{Int}(undef,n*n)
-    out = Array{Float64}(undef,n,n)
-    
+    n = size(img, 1)
+    bkg = mean(img)              # T が Complex でも OK（複素平均になる）
+    refX = Array{Int}(undef, n*n)
+    refY = Array{Int}(undef, n*n)
+    out  = Array{T}(undef, n, n) # 要素型は img と同じ T
+
     for i in 1:n
         for j in 1:n
-            refX[(i-1)*n+j] = Int(round(coefa[1] + coefa[2]*j + coefa[3]*i + coefa[4]*j^2 + coefa[5]*i*j + coefa[6]*i^2))
-            refY[(i-1)*n+j] = Int(round(coefa[7] + coefa[8]*j + coefa[9]*i + coefa[10]*j^2 + coefa[11]*i*j + coefa[12]*i^2))
+            refX[(i-1)*n+j] = Int(round(coefa[1] + coefa[2]*j + coefa[3]*i +
+                                        coefa[4]*j^2 + coefa[5]*i*j + coefa[6]*i^2))
+            refY[(i-1)*n+j] = Int(round(coefa[7] + coefa[8]*j + coefa[9]*i +
+                                        coefa[10]*j^2 + coefa[11]*i*j + coefa[12]*i^2))
         end
     end
 
     for i in 1:n
         for j in 1:n
-            if (refX[(i-1)*n+j]>=1) && (refX[(i-1)*n+j]<=n) && (refY[(i-1)*n+j]>=1) && (refY[(i-1)*n+j]<=n)
-                out[i,j] = img[refY[(i-1)*n+j],refX[(i-1)*n+j]]
+            x = refX[(i-1)*n+j]
+            y = refY[(i-1)*n+j]
+            if 1 <= x <= n && 1 <= y <= n
+                out[i, j] = img[y, x]   # T 型の値そのままコピー（Float でも Complex でもOK）
             else
-                out[i,j] = bkg
+                out[i, j] = bkg         # bkg も T 型
             end
         end
     end
-    return out 
+    return out
 end
 
 function correct_image(input_image_path::String, output_image_path::String, coefficients_path::String)
