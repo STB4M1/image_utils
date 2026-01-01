@@ -10,7 +10,9 @@ export read_img_gray_float64,
        raw_separate_bayer,
        separate_bayer,
        separate_bayer_downsample,
-       make_background
+       make_background,
+       label_components_4conn,
+       label_components_8conn
 
 using Images, ProgressMeter, Base.Threads
 
@@ -432,6 +434,87 @@ function make_background(pathlist::Vector{String}; mode=:mode)
             return background
         end
     end
+end
+
+function label_components_4conn(bin::AbstractMatrix)
+    ny, nx = size(bin)
+    lab = zeros(Int, ny, nx)
+    boxes = Dict{Int, Tuple{Int,Int,Int,Int,Int}}()  # id => (ymin,ymax,xmin,xmax,area)
+    qy = Vector{Int}(undef, ny*nx)
+    qx = Vector{Int}(undef, ny*nx)
+
+    cur = 0
+    for y in 1:ny, x in 1:nx
+        if bin[y,x] && lab[y,x] == 0
+            cur += 1
+            # BFS開始
+            head = 1; tail = 1
+            qy[tail] = y; qx[tail] = x
+
+            ymin = y; ymax = y; xmin = x; xmax = x; area = 0
+            lab[y,x] = cur
+
+            while head <= tail
+                cy = qy[head]; cx = qx[head]; head += 1
+                area += 1
+                ymin = min(ymin, cy); ymax = max(ymax, cy)
+                xmin = min(xmin, cx); xmax = max(xmax, cx)
+
+                # 4近傍
+                if cy>1      && bin[cy-1,cx] && lab[cy-1,cx]==0; lab[cy-1,cx]=cur; tail+=1; qy[tail]=cy-1; qx[tail]=cx; end
+                if cy<ny     && bin[cy+1,cx] && lab[cy+1,cx]==0; lab[cy+1,cx]=cur; tail+=1; qy[tail]=cy+1; qx[tail]=cx; end
+                if cx>1      && bin[cy,cx-1] && lab[cy,cx-1]==0; lab[cy,cx-1]=cur; tail+=1; qy[tail]=cy;   qx[tail]=cx-1; end
+                if cx<nx     && bin[cy,cx+1] && lab[cy,cx+1]==0; lab[cy,cx+1]=cur; tail+=1; qy[tail]=cy;   qx[tail]=cx+1; end
+            end
+            boxes[cur] = (ymin, ymax, xmin, xmax, area)
+        end
+    end
+    return lab, boxes
+end
+function label_components_8conn(bin::AbstractMatrix)
+    ny, nx = size(bin)
+    lab = zeros(Int, ny, nx)
+    boxes = Dict{Int, Tuple{Int,Int,Int,Int,Int}}()  # id => (ymin,ymax,xmin,xmax,area)
+    qy = Vector{Int}(undef, ny*nx)
+    qx = Vector{Int}(undef, ny*nx)
+
+    cur = 0
+    for y in 1:ny, x in 1:nx
+        if bin[y,x] && lab[y,x] == 0
+            cur += 1
+            # BFS開始
+            head = 1; tail = 1
+            qy[tail] = y; qx[tail] = x
+
+            ymin = y; ymax = y; xmin = x; xmax = x; area = 0
+            lab[y,x] = cur
+
+            while head <= tail
+                cy = qy[head]; cx = qx[head]; head += 1
+                area += 1
+                ymin = min(ymin, cy); ymax = max(ymax, cy)
+                xmin = min(xmin, cx); xmax = max(xmax, cx)
+
+                # 8近傍
+                for dy in -1:1, dx in -1:1
+                    if dy == 0 && dx == 0
+                        continue
+                    end
+                    nyy, nxx = cy+dy, cx+dx
+                    if 1 <= nyy <= ny && 1 <= nxx <= nx
+                        if bin[nyy,nxx] && lab[nyy,nxx] == 0
+                            lab[nyy,nxx] = cur
+                            tail += 1
+                            qy[tail] = nyy
+                            qx[tail] = nxx
+                        end
+                    end
+                end
+            end
+            boxes[cur] = (ymin, ymax, xmin, xmax, area)
+        end
+    end
+    return lab, boxes
 end
 
 end # module
