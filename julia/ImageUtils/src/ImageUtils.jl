@@ -11,6 +11,7 @@ export read_img_gray_float64,
        separate_bayer,
        separate_bayer_downsample,
        make_background,
+       make_background_rgb,
        label_components_4conn,
        label_components_8conn
 
@@ -434,6 +435,145 @@ function make_background(pathlist::Vector{String}; mode=:mode)
             return background
         end
     end
+end
+
+function make_background_rgb(pathlist::Vector{String}; mode::Symbol=:mode)
+    println("make_background_rgb begins!")
+
+    # 1枚目でサイズ取得
+    img0 = read_img_rgb_float64(pathlist[1])   # Matrix{RGB{Float64}}
+    height, width = size(img0)
+    println("height x width = $height x $width")
+
+    if mode == :mean
+        backR = zeros(Float64, height, width)
+        backG = zeros(Float64, height, width)
+        backB = zeros(Float64, height, width)
+
+        @showprogress desc="Background calculating (mean RGB)..." for path in pathlist
+            img = read_img_rgb_float64(path)
+            cv = channelview(img)  # (3, H, W) in [0,1]
+
+            r_u8 = trunc.(UInt8, cv[1, :, :] .* 255)
+            g_u8 = trunc.(UInt8, cv[2, :, :] .* 255)
+            b_u8 = trunc.(UInt8, cv[3, :, :] .* 255)
+
+            backR .+= Float64.(r_u8)
+            backG .+= Float64.(g_u8)
+            backB .+= Float64.(b_u8)
+
+            img = nothing
+        end
+
+        backR ./= length(pathlist); backG ./= length(pathlist); backB ./= length(pathlist)
+        backR ./= 255.0;            backG ./= 255.0;            backB ./= 255.0
+        GC.gc()
+        return (R=backR, G=backG, B=backB)
+    end
+
+    if mode == :mode || mode == :median
+        # votevol[ch][bin, j, i]
+        voteR = zeros(Int, 256, height, width)
+        voteG = zeros(Int, 256, height, width)
+        voteB = zeros(Int, 256, height, width)
+
+        @showprogress desc="Background calculating ($(mode) RGB)..." for path in pathlist
+            img = read_img_rgb_float64(path)
+            cv = channelview(img)
+
+            r_u8 = trunc.(UInt8, cv[1, :, :] .* 255)
+            g_u8 = trunc.(UInt8, cv[2, :, :] .* 255)
+            b_u8 = trunc.(UInt8, cv[3, :, :] .* 255)
+
+            @threads for i in 1:width
+                @inbounds for j in 1:height
+                    voteR[r_u8[j, i] + 1, j, i] += 1
+                    voteG[g_u8[j, i] + 1, j, i] += 1
+                    voteB[b_u8[j, i] + 1, j, i] += 1
+                end
+            end
+
+            img = nothing
+        end
+
+        if mode == :mode
+            # --- R ---
+            argmaxR = argmax(voteR, dims=1)
+            idxR = argmaxR[1, :, :]
+            idxR_arr = [v[1] for v in idxR]
+            backR = (idxR_arr .- 1) ./ 255.0
+
+            # --- G ---
+            argmaxG = argmax(voteG, dims=1)
+            idxG = argmaxG[1, :, :]
+            idxG_arr = [v[1] for v in idxG]
+            backG = (idxG_arr .- 1) ./ 255.0
+
+            # --- B ---
+            argmaxB = argmax(voteB, dims=1)
+            idxB = argmaxB[1, :, :]
+            idxB_arr = [v[1] for v in idxB]
+            backB = (idxB_arr .- 1) ./ 255.0
+
+            return (R=backR, G=backG, B=backB)
+        end
+
+        if mode == :median
+            N = length(pathlist)
+            half_lo = (N + 1) ÷ 2
+            half_hi = (N + 2) ÷ 2
+
+            backR = Array{Float64}(undef, height, width)
+            backG = Array{Float64}(undef, height, width)
+            backB = Array{Float64}(undef, height, width)
+
+            @threads for i in 1:width
+                @inbounds for j in 1:height
+                    # --- R ---
+                    csum = 0; med_lo = 1; med_hi = 1; found_lo = false
+                    @inbounds for k in 1:256
+                        csum += voteR[k, j, i]
+                        if !found_lo && csum >= half_lo
+                            med_lo = k; found_lo = true
+                        end
+                        if csum >= half_hi
+                            med_hi = k; break
+                        end
+                    end
+                    backR[j, i] = (((med_lo - 1) + (med_hi - 1)) / 2.0) / 255.0
+
+                    # --- G ---
+                    csum = 0; med_lo = 1; med_hi = 1; found_lo = false
+                    @inbounds for k in 1:256
+                        csum += voteG[k, j, i]
+                        if !found_lo && csum >= half_lo
+                            med_lo = k; found_lo = true
+                        end
+                        if csum >= half_hi
+                            med_hi = k; break
+                        end
+                    end
+                    backG[j, i] = (((med_lo - 1) + (med_hi - 1)) / 2.0) / 255.0
+
+                    # --- B ---
+                    csum = 0; med_lo = 1; med_hi = 1; found_lo = false
+                    @inbounds for k in 1:256
+                        csum += voteB[k, j, i]
+                        if !found_lo && csum >= half_lo
+                            med_lo = k; found_lo = true
+                        end
+                        if csum >= half_hi
+                            med_hi = k; break
+                        end
+                    end
+                    backB[j, i] = (((med_lo - 1) + (med_hi - 1)) / 2.0) / 255.0
+                end
+            end
+            return (R=backR, G=backG, B=backB)
+        end
+    end
+
+    error("Unknown mode: $mode (use :mean, :mode, :median)")
 end
 
 function label_components_4conn(bin::AbstractMatrix)
