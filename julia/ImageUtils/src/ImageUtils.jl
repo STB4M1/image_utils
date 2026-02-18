@@ -10,7 +10,10 @@ export read_img_gray_float64,
        raw_separate_bayer,
        separate_bayer,
        separate_bayer_downsample,
-       make_background
+       make_background,
+       make_background_rgb,
+       label_components_4conn,
+       label_components_8conn
 
 using Images, ProgressMeter, Base.Threads
 
@@ -432,6 +435,226 @@ function make_background(pathlist::Vector{String}; mode=:mode)
             return background
         end
     end
+end
+
+function make_background_rgb(pathlist::Vector{String}; mode::Symbol=:mode)
+    println("make_background_rgb begins!")
+
+    # 1枚目でサイズ取得
+    img0 = read_img_rgb_float64(pathlist[1])   # Matrix{RGB{Float64}}
+    height, width = size(img0)
+    println("height x width = $height x $width")
+
+    if mode == :mean
+        backR = zeros(Float64, height, width)
+        backG = zeros(Float64, height, width)
+        backB = zeros(Float64, height, width)
+
+        @showprogress desc="Background calculating (mean RGB)..." for path in pathlist
+            img = read_img_rgb_float64(path)
+            cv = channelview(img)  # (3, H, W) in [0,1]
+
+            r_u8 = trunc.(UInt8, cv[1, :, :] .* 255)
+            g_u8 = trunc.(UInt8, cv[2, :, :] .* 255)
+            b_u8 = trunc.(UInt8, cv[3, :, :] .* 255)
+
+            backR .+= Float64.(r_u8)
+            backG .+= Float64.(g_u8)
+            backB .+= Float64.(b_u8)
+
+            img = nothing
+        end
+
+        backR ./= length(pathlist); backG ./= length(pathlist); backB ./= length(pathlist)
+        backR ./= 255.0;            backG ./= 255.0;            backB ./= 255.0
+        GC.gc()
+        return (R=backR, G=backG, B=backB)
+    end
+
+    if mode == :mode || mode == :median
+        # votevol[ch][bin, j, i]
+        voteR = zeros(Int, 256, height, width)
+        voteG = zeros(Int, 256, height, width)
+        voteB = zeros(Int, 256, height, width)
+
+        @showprogress desc="Background calculating ($(mode) RGB)..." for path in pathlist
+            img = read_img_rgb_float64(path)
+            cv = channelview(img)
+
+            r_u8 = trunc.(UInt8, cv[1, :, :] .* 255)
+            g_u8 = trunc.(UInt8, cv[2, :, :] .* 255)
+            b_u8 = trunc.(UInt8, cv[3, :, :] .* 255)
+
+            @threads for i in 1:width
+                @inbounds for j in 1:height
+                    voteR[r_u8[j, i] + 1, j, i] += 1
+                    voteG[g_u8[j, i] + 1, j, i] += 1
+                    voteB[b_u8[j, i] + 1, j, i] += 1
+                end
+            end
+
+            img = nothing
+        end
+
+        if mode == :mode
+            # --- R ---
+            argmaxR = argmax(voteR, dims=1)
+            idxR = argmaxR[1, :, :]
+            idxR_arr = [v[1] for v in idxR]
+            backR = (idxR_arr .- 1) ./ 255.0
+
+            # --- G ---
+            argmaxG = argmax(voteG, dims=1)
+            idxG = argmaxG[1, :, :]
+            idxG_arr = [v[1] for v in idxG]
+            backG = (idxG_arr .- 1) ./ 255.0
+
+            # --- B ---
+            argmaxB = argmax(voteB, dims=1)
+            idxB = argmaxB[1, :, :]
+            idxB_arr = [v[1] for v in idxB]
+            backB = (idxB_arr .- 1) ./ 255.0
+
+            return (R=backR, G=backG, B=backB)
+        end
+
+        if mode == :median
+            N = length(pathlist)
+            half_lo = (N + 1) ÷ 2
+            half_hi = (N + 2) ÷ 2
+
+            backR = Array{Float64}(undef, height, width)
+            backG = Array{Float64}(undef, height, width)
+            backB = Array{Float64}(undef, height, width)
+
+            @threads for i in 1:width
+                @inbounds for j in 1:height
+                    # --- R ---
+                    csum = 0; med_lo = 1; med_hi = 1; found_lo = false
+                    @inbounds for k in 1:256
+                        csum += voteR[k, j, i]
+                        if !found_lo && csum >= half_lo
+                            med_lo = k; found_lo = true
+                        end
+                        if csum >= half_hi
+                            med_hi = k; break
+                        end
+                    end
+                    backR[j, i] = (((med_lo - 1) + (med_hi - 1)) / 2.0) / 255.0
+
+                    # --- G ---
+                    csum = 0; med_lo = 1; med_hi = 1; found_lo = false
+                    @inbounds for k in 1:256
+                        csum += voteG[k, j, i]
+                        if !found_lo && csum >= half_lo
+                            med_lo = k; found_lo = true
+                        end
+                        if csum >= half_hi
+                            med_hi = k; break
+                        end
+                    end
+                    backG[j, i] = (((med_lo - 1) + (med_hi - 1)) / 2.0) / 255.0
+
+                    # --- B ---
+                    csum = 0; med_lo = 1; med_hi = 1; found_lo = false
+                    @inbounds for k in 1:256
+                        csum += voteB[k, j, i]
+                        if !found_lo && csum >= half_lo
+                            med_lo = k; found_lo = true
+                        end
+                        if csum >= half_hi
+                            med_hi = k; break
+                        end
+                    end
+                    backB[j, i] = (((med_lo - 1) + (med_hi - 1)) / 2.0) / 255.0
+                end
+            end
+            return (R=backR, G=backG, B=backB)
+        end
+    end
+
+    error("Unknown mode: $mode (use :mean, :mode, :median)")
+end
+
+function label_components_4conn(bin::AbstractMatrix)
+    ny, nx = size(bin)
+    lab = zeros(Int, ny, nx)
+    boxes = Dict{Int, Tuple{Int,Int,Int,Int,Int}}()  # id => (ymin,ymax,xmin,xmax,area)
+    qy = Vector{Int}(undef, ny*nx)
+    qx = Vector{Int}(undef, ny*nx)
+
+    cur = 0
+    for y in 1:ny, x in 1:nx
+        if bin[y,x] && lab[y,x] == 0
+            cur += 1
+            # BFS開始
+            head = 1; tail = 1
+            qy[tail] = y; qx[tail] = x
+
+            ymin = y; ymax = y; xmin = x; xmax = x; area = 0
+            lab[y,x] = cur
+
+            while head <= tail
+                cy = qy[head]; cx = qx[head]; head += 1
+                area += 1
+                ymin = min(ymin, cy); ymax = max(ymax, cy)
+                xmin = min(xmin, cx); xmax = max(xmax, cx)
+
+                # 4近傍
+                if cy>1      && bin[cy-1,cx] && lab[cy-1,cx]==0; lab[cy-1,cx]=cur; tail+=1; qy[tail]=cy-1; qx[tail]=cx; end
+                if cy<ny     && bin[cy+1,cx] && lab[cy+1,cx]==0; lab[cy+1,cx]=cur; tail+=1; qy[tail]=cy+1; qx[tail]=cx; end
+                if cx>1      && bin[cy,cx-1] && lab[cy,cx-1]==0; lab[cy,cx-1]=cur; tail+=1; qy[tail]=cy;   qx[tail]=cx-1; end
+                if cx<nx     && bin[cy,cx+1] && lab[cy,cx+1]==0; lab[cy,cx+1]=cur; tail+=1; qy[tail]=cy;   qx[tail]=cx+1; end
+            end
+            boxes[cur] = (ymin, ymax, xmin, xmax, area)
+        end
+    end
+    return lab, boxes
+end
+function label_components_8conn(bin::AbstractMatrix)
+    ny, nx = size(bin)
+    lab = zeros(Int, ny, nx)
+    boxes = Dict{Int, Tuple{Int,Int,Int,Int,Int}}()  # id => (ymin,ymax,xmin,xmax,area)
+    qy = Vector{Int}(undef, ny*nx)
+    qx = Vector{Int}(undef, ny*nx)
+
+    cur = 0
+    for y in 1:ny, x in 1:nx
+        if bin[y,x] && lab[y,x] == 0
+            cur += 1
+            # BFS開始
+            head = 1; tail = 1
+            qy[tail] = y; qx[tail] = x
+
+            ymin = y; ymax = y; xmin = x; xmax = x; area = 0
+            lab[y,x] = cur
+
+            while head <= tail
+                cy = qy[head]; cx = qx[head]; head += 1
+                area += 1
+                ymin = min(ymin, cy); ymax = max(ymax, cy)
+                xmin = min(xmin, cx); xmax = max(xmax, cx)
+
+                # 8近傍
+                for dy in -1:1, dx in -1:1
+                    if dy == 0 && dx == 0
+                        continue
+                    end
+                    nyy, nxx = cy+dy, cx+dx
+                    if 1 <= nyy <= ny && 1 <= nxx <= nx
+                        if bin[nyy,nxx] && lab[nyy,nxx] == 0
+                            lab[nyy,nxx] = cur
+                            tail += 1
+                            qy[tail] = nyy
+                            qx[tail] = nxx
+                        end
+                    end
+                end
+            end
+            boxes[cur] = (ymin, ymax, xmin, xmax, area)
+        end
+    end
+    return lab, boxes
 end
 
 end # module
